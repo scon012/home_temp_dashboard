@@ -1,3 +1,11 @@
+"""Serve and visualize temperature readings from local CSV log files.
+
+The module provides a dependency-free Python HTTP server and an embedded
+responsive HTML dashboard.  It supports both wide CSV files (timestamp plus
+one column per location) and long CSV files (timestamp, location, temperature).
+Chart.js is loaded by the browser from a CDN.
+"""
+
 from collections import defaultdict
 import csv
 from datetime import datetime
@@ -18,12 +26,22 @@ FILES = {
         r"C:\temperature_monitor\1A_hue_temperature_log.csv"
     ),
 }
+"""Mapping of user-visible CSV names to their absolute Windows paths."""
+
 DEFAULT_FILE = "18_hue_temperature_log.csv"
 PORT = 8000
+"""Default CSV selection and HTTP listening port."""
 
 
 def parse_timestamp(ts_str):
-  """Attempts to parse common timestamp formats into a datetime object."""
+  """Parse a timestamp using ISO 8601 and a set of common log formats.
+
+  Args:
+    ts_str: Timestamp text to parse.
+
+  Returns:
+    A :class:`datetime.datetime` when parsing succeeds, otherwise ``None``.
+  """
   s = ts_str.strip()
   if not s:
     return None
@@ -58,21 +76,32 @@ def parse_timestamp(ts_str):
 
 
 def hex_to_rgba(hex_color, alpha):
+  """Convert a hexadecimal CSS color to an ``rgba()`` CSS string."""
   h = hex_color.lstrip("#")
   r, g, b = tuple(int(h[i : i + 2], 16) for i in (0, 2, 4))
   return f"rgba({r}, {g}, {b}, {alpha})"
 
 
 def parse_csv_for_charts(rows):
-  """
-    Extracts normalized readings (datetime, location, temp) from either:
-    1. Long format: [Timestamp, Location/Sensor, Temperature]
-    2. Wide format: [Timestamp, Location_A, Location_B, ...]
+  """Normalize CSV rows into Chart.js dataset payloads.
 
-    Returns payloads for:
-    - hourly: Hourly mean per location
-    - daily: Daily mean, median, high, and low per location
-    """
+  The parser recognizes two layouts:
+
+  * Wide format: ``Timestamp, Location A, Location B, ...``.
+  * Long format: ``Timestamp, Location/Sensor, Temperature``.
+
+  Args:
+    rows: CSV rows, including the header row.
+
+  Returns:
+    A dictionary containing ``hourly`` and ``daily`` payloads.  Each payload
+    has ``labels`` and Chart.js ``datasets`` lists.  The hourly dataset contains
+    mean temperatures for each hour; the daily dataset contains mean, median,
+    minimum, and maximum temperatures for each day.
+
+    Malformed timestamps or non-numeric temperatures are omitted.  An empty
+    pair of payloads is returned when no usable data rows exist.
+  """
   empty_payload = {
       "hourly": {"labels": [], "datasets": []},
       "daily": {"labels": [], "datasets": []},
@@ -289,6 +318,12 @@ def parse_csv_for_charts(rows):
 
 
 class CSVHandler(BaseHTTPRequestHandler):
+  """Handle dashboard requests and serve the temperature log interface.
+
+  Only ``GET /`` is implemented.  A ``file`` query parameter selects an entry
+  in :data:`FILES`; an unknown or missing value falls back to :data:`DEFAULT_FILE`.
+  The response is a complete HTML document with embedded CSS and JavaScript.
+  """
 
   def do_GET(self):
     parsed_url = urlparse(self.path)
@@ -1325,6 +1360,7 @@ class CSVHandler(BaseHTTPRequestHandler):
 
 
 def get_local_ip():
+  """Return the host's local network address, or ``127.0.0.1`` as a fallback."""
   s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
   try:
     s.connect(("8.8.8.8", 80))
